@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brain Viewer - Interactive 3D Neuroimaging Visualization</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <div id="info-panel">
+      <h1>Region Info</h1>
+      <!-- <p></p> -->
+      <div id="selected-region">Click on a brain region to see details</div>
+    </div>
+    <canvas id="three-canvas"></canvas>
+    <div id="loading-screen">
+      <div class="loader"></div>
+      <p>Loading brain data...</p>
+    </div>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
