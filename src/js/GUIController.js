@@ -189,9 +189,8 @@ export class GUIController {
 
     // View presets
     viewFolder.add({ action: () => this.setLateralView() }, 'action').name('Lateral View');
-    viewFolder.add({ action: () => this.setMedialView() }, 'action').name('Medial View');
     viewFolder.add({ action: () => this.setSuperiorView() }, 'action').name('Superior View');
-    viewFolder.add({ action: () => this.setAnteriorView() }, 'action').name('Anterior View');
+    viewFolder.add({ action: () => this.setCoronalView() }, 'action').name('Coronal View');
 
     // Reset camera button
     viewFolder.add(this.settings, 'resetCamera')
@@ -205,10 +204,7 @@ export class GUIController {
   }
 
   resetCamera() {
-    if (this.camera) {
-      this.camera.position.set(0, 0, 200);
-      this.camera.lookAt(0, 0, 0);
-    }
+    this.setLateralView();
   }
 
   takeScreenshot() {
@@ -228,9 +224,8 @@ export class GUIController {
     
     const presets = {
       'Lateral View': () => this.setLateralView(),
-      'Medial View': () => this.setMedialView(),
       'Superior View': () => this.setSuperiorView(),
-      'Anterior View': () => this.setAnteriorView()
+      'Coronal View': () => this.setCoronalView()
     };
 
     Object.entries(presets).forEach(([name, callback]) => {
@@ -245,21 +240,15 @@ export class GUIController {
     }
   }
 
-  setMedialView() {
-    if (this.camera) {
-      this.camera.position.set(-200, 0, 0);
-      this.camera.lookAt(0, 0, 0);
-    }
-  }
-
   setSuperiorView() {
     if (this.camera) {
       this.camera.position.set(0, 200, 0);
+      // this.camera.up.set(0, 0, 1);
       this.camera.lookAt(0, 0, 0);
     }
   }
 
-  setAnteriorView() {
+  setCoronalView() {
     if (this.camera) {
       this.camera.position.set(0, 0, 200);
       this.camera.lookAt(0, 0, 0);

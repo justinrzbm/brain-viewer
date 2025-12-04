@@ -36,18 +36,101 @@ export class BrainLoader {
     };
   }
 
+    /**
+   * Load a single mesh file (OBJ or PLY)
+   * @param {string} path - Path to the mesh file
+   * @param {string} name - Display name for the structure
+   * @param {number} color - Hex color for the mesh
+   * @param {Object} brainStructures - Reference to store loaded structure
+   */
+  async loadMesh(path, name, color, brainStructures) {
+    return new Promise((resolve, reject) => {
+      const fileExtension = path.split('.').pop().toLowerCase();
+      
+      // Determine loader based on file extension
+      const loader = fileExtension === 'ply' ? this.plyLoader : this.objLoader;
+      
+      loader.load(
+        path,
+        (loadedObject) => {
+          let mesh;
+          
+          if (fileExtension === 'ply') {
+            // PLY loader returns geometry directly
+            const geometry = loadedObject;
+            const material = this.createMaterial(color);
+            mesh = new THREE.Mesh(geometry, material);
+          } else {
+            // OBJ loader returns a group/object
+            mesh = loadedObject;
+            
+            // Apply material to all children
+            mesh.traverse((child) => {
+              if (child.isMesh) {
+                child.material = this.createMaterial(color);
+                child.castShadow = true;
+                child.receiveShadow = true;
+                child.userData.name = name;
+              }
+            });
+          }
+          
+          // Set metadata
+          mesh.name = name;
+          mesh.userData.name = name;
+          mesh.userData.originalColor = color;
+          
+          // Add to scene and store reference
+          this.scene.add(mesh);
+          brainStructures[name] = mesh;
+          
+          console.log(`Loaded: ${name}`);
+          resolve(mesh);
+        },
+        (progress) => {
+          // if (progress.lengthComputable) {
+          //   const percentComplete = (progress.loaded / progress.total * 100).toFixed(2);
+          //   console.log(`${name}: ${percentComplete}%`);
+          // }
+        },
+        (error) => {
+          console.error(`Failed to load ${name} from ${path}:`, error);
+          reject(error);
+        }
+      );
+    });
+  }
+
   /**
-   * Center and rotate a group of structures
+   * Create a material for brain structures
+   * @param {number} color - Hex color value
+   * @returns {THREE.Material}
+   */
+  createMaterial(color) {
+    return new THREE.MeshPhongMaterial({
+      color: color,
+      shininess: 30,
+      specular: 0x222222,
+      flatShading: false,
+      side: THREE.DoubleSide,
+      transparent: false,
+      opacity: 1.0,
+      emissive: 0x000000,
+      emissiveIntensity: 0
+    });
+  }
+
+  rotateStructureGroup90(structures, axis) {
+    Object.values(structures).forEach(structure => {
+      structure.rotation[axis] += Math.PI / 2;
+    });
+  }
+
+  /**
+   * Center a group of structures
    * @param {Object} structures - Dictionary of structures to center
    */
   centerStructureGroup(structures) {
-    if (Object.keys(structures).length === 0) return;
-
-    // First, rotate the structures to standard orientation
-    Object.values(structures).forEach(structure => {
-      structure.rotation.x = -Math.PI / 2;
-    });
-
     // Calculate bounding box of this structure group
     const box = new THREE.Box3();
     Object.values(structures).forEach(structure => {
@@ -140,6 +223,8 @@ export class BrainLoader {
       // { name: 'WM-hypointensities', color: 0xc8c896 },
     ];
     // TODO: Right and Left VentralDC missing (or erroneously in render?)
+    // CSF and RightVentralDC are symmetrical - check naming
+    // 3rd ventricle missing highlight
 
     const loadPromises = subcorticalStructures.map(structure => 
       this.loadMesh(
@@ -152,6 +237,11 @@ export class BrainLoader {
 
     try {
       await Promise.all(loadPromises);
+      this.rotateStructureGroup90(brainStructures, 'x');
+      this.rotateStructureGroup90(brainStructures, 'x');
+      this.rotateStructureGroup90(brainStructures, 'y');
+      this.rotateStructureGroup90(brainStructures, 'y');
+
       this.centerStructureGroup(brainStructures);
       console.log('Subcortical segmentations loaded');
     } catch (error) {
@@ -159,93 +249,7 @@ export class BrainLoader {
     }
   }
 
-  /**
-   * Load a single mesh file (OBJ or PLY)
-   * @param {string} path - Path to the mesh file
-   * @param {string} name - Display name for the structure
-   * @param {number} color - Hex color for the mesh
-   * @param {Object} brainStructures - Reference to store loaded structure
-   */
-  async loadMesh(path, name, color, brainStructures) {
-    return new Promise((resolve, reject) => {
-      const fileExtension = path.split('.').pop().toLowerCase();
-      
-      // Determine loader based on file extension
-      const loader = fileExtension === 'ply' ? this.plyLoader : this.objLoader;
-      
-      loader.load(
-        path,
-        (loadedObject) => {
-          let mesh;
-          
-          if (fileExtension === 'ply') {
-            // PLY loader returns geometry directly
-            const geometry = loadedObject;
-            const material = this.createMaterial(color);
-            mesh = new THREE.Mesh(geometry, material);
-          } else {
-            // OBJ loader returns a group/object
-            mesh = loadedObject;
-            
-            // Apply material to all children
-            mesh.traverse((child) => {
-              if (child.isMesh) {
-                child.material = this.createMaterial(color);
-                child.castShadow = true;
-                child.receiveShadow = true;
-                child.userData.name = name;
-              }
-            });
-          }
-          
-          // Set metadata
-          mesh.name = name;
-          mesh.userData.name = name;
-          mesh.userData.originalColor = color;
-          
-          // Don't center - keep FreeSurfer's original coordinates
-          // All FreeSurfer meshes are in the same coordinate space (RAS)
-          // this.centerMesh(mesh);
-          
-          // Add to scene and store reference
-          this.scene.add(mesh);
-          brainStructures[name] = mesh;
-          
-          console.log(`Loaded: ${name}`);
-          resolve(mesh);
-        },
-        (progress) => {
-          // if (progress.lengthComputable) {
-          //   const percentComplete = (progress.loaded / progress.total * 100).toFixed(2);
-          //   console.log(`${name}: ${percentComplete}%`);
-          // }
-        },
-        (error) => {
-          console.error(`Failed to load ${name} from ${path}:`, error);
-          reject(error);
-        }
-      );
-    });
-  }
 
-  /**
-   * Create a material for brain structures
-   * @param {number} color - Hex color value
-   * @returns {THREE.Material}
-   */
-  createMaterial(color) {
-    return new THREE.MeshPhongMaterial({
-      color: color,
-      shininess: 30,
-      specular: 0x222222,
-      flatShading: false,
-      side: THREE.DoubleSide,
-      transparent: false,
-      opacity: 1.0,
-      emissive: 0x000000,
-      emissiveIntensity: 0
-    });
-  }
 
   /**
    * Load individual parcellated regions from FreeSurfer annotation
@@ -311,7 +315,13 @@ export class BrainLoader {
 
     try {
       await Promise.all(loadPromises);
-      // this.centerStructureGroup(brainStructures);
+      this.rotateStructureGroup90(brainStructures, 'x');
+      this.rotateStructureGroup90(brainStructures, 'x');
+      this.rotateStructureGroup90(brainStructures, 'x');
+      this.rotateStructureGroup90(brainStructures, 'z');
+      this.rotateStructureGroup90(brainStructures, 'z');
+
+      this.centerStructureGroup(brainStructures);
       console.log('Cortical atlas loaded');
     } catch (error) {
       console.warn(`Atlas ${atlasName} not found or incomplete:`, error);

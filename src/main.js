@@ -242,8 +242,8 @@ class BrainViewer {
     // Make selected structure glow
     mesh.traverse((child) => {
       if (child.isMesh && child.material) {
-        child.material.emissive.setHex(0xffffff);
-        child.material.emissiveIntensity = 0.3;           
+        child.material.emissive.setHex(0xffffcc);
+        child.material.emissiveIntensity = 0.5;
       }
     });
   }
@@ -350,6 +350,9 @@ class BrainViewer {
         </div>
       `;
     }
+
+      // Set initial orientation to lateral view
+      this.guiController.setLateralView();
   }
 
   applyColorMapping(metric) {

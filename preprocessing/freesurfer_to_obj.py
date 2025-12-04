@@ -208,43 +208,45 @@ class FreeSurferConverter:
             raise FileNotFoundError(f"{brainmask_file} not found, required for masking WM-hypointensities")
 
         # FreeSurfer subcortical structure labels output by asegstats2table
+        # 10 and 49 actually point to Thalamus-Proper, but we use Thalamus to match feature names
         subcortical_structures = {
-            4: 'Left-Lateral-Ventricle',
-            5: 'Left-Inf-Lat-Vent',
-            7: 'Left-Cerebellum-White-Matter',
-            8: 'Left-Cerebellum-Cortex',
-            10: 'Left-Thalamus',
-            11: 'Left-Caudate',
-            12: 'Left-Putamen',
-            13: 'Left-Pallidum',
-            17: 'Left-Hippocampus',
-            18: 'Left-Amygdala',
-            26: 'Left-Accumbens-area',
-            49: 'Right-Thalamus',
-            43: 'Right-Lateral-Ventricle',
-            44: 'Right-Inf-Lat-Vent',
-            46: 'Right-Cerebellum-White-Matter',
-            47: 'Right-Cerebellum-Cortex',
-            48: 'Right-Thalamus',
-            50: 'Right-Caudate',
-            51: 'Right-Putamen',
-            52: 'Right-Pallidum',
-            53: 'Right-Hippocampus',
-            54: 'Right-Amygdala',
-            58: 'Right-Accumbens-area',
-            16: 'Brain-Stem',
-            28: 'CSF',
-            30: '3rd-Ventricle',
-            31: '4th-Ventricle',
-            43: 'WM-hypointensities',
-            44: 'Left-VentralDC',
-            45: 'Right-VentralDC',
-            60: 'Optic-Chiasm',
-            251: 'CC_Posterior',
-            252: 'CC_Mid_Posterior',
-            253: 'CC_Central',
-            254: 'CC_Mid_Anterior',
-            255: 'CC_Anterior',
+            4: "Left-Lateral-Ventricle",
+            5: "Left-Inf-Lat-Vent",
+            7: "Left-Cerebellum-White-Matter",
+            8: "Left-Cerebellum-Cortex",
+            10: "Left-Thalamus",
+            11: "Left-Caudate",
+            12: "Left-Putamen",
+            13: "Left-Pallidum",
+            14: "3rd-Ventricle",
+            15: "4th-Ventricle",
+            16: "Brain-Stem",
+            17: "Left-Hippocampus",
+            18: "Left-Amygdala",
+            24: "CSF",
+            26: "Left-Accumbens-area",
+            28: "Left-VentralDC",
+            31: "Left-choroid-plexus",
+            43: "Right-Lateral-Ventricle",
+            44: "Right-Inf-Lat-Vent",
+            46: "Right-Cerebellum-White-Matter",
+            47: "Right-Cerebellum-Cortex",
+            49: "Right-Thalamus",
+            50: "Right-Caudate",
+            51: "Right-Putamen",
+            52: "Right-Pallidum",
+            53: "Right-Hippocampus",
+            54: "Right-Amygdala",
+            58: "Right-Accumbens-area",
+            60: "Right-VentralDC",
+            85: "Optic-Chiasm",
+            192: "Corpus_Callosum",
+            250: "Fornix",
+            251: "CC_Posterior",
+            252: "CC_Mid_Posterior",
+            253: "CC_Central",
+            254: "CC_Mid_Anterior",
+            255: "CC_Anterior",
         }
 
         # Load segmentation volume
@@ -379,7 +381,7 @@ class FreeSurferConverter:
         print(f"Output directory: {self.output_dir}\n")
         
         # # Convert cortical surfaces
-        self.convert_cortical_surfaces()
+        # self.convert_cortical_surfaces() # unused model data
         
         # Convert parcellated regions for both hemispheres
         for hemisphere in ['lh', 'rh']:
@@ -403,11 +405,6 @@ def main():
     parser.add_argument(
         'output_dir',
         help='Output directory for OBJ files'
-    )
-    parser.add_argument(
-        '--surfaces-only',
-        action='store_true',
-        help='Convert only cortical surfaces (skip parcellations and subcortical)'
     )
     parser.add_argument(
         '--parcellations-only',
@@ -436,9 +433,7 @@ def main():
     # Create converter and run
     converter = FreeSurferConverter(args.subject_dir, args.output_dir)
     
-    if args.surfaces_only:
-        converter.convert_cortical_surfaces()
-    elif args.parcellations_only:
+    if args.parcellations_only:
         for hemi in ['lh', 'rh']:
             converter.convert_parcellated_regions(hemi)
     else:
