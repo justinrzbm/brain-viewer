@@ -18,12 +18,16 @@ class BrainViewer {
     this.guiController = null;
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
-    this.brainStructures = {};
+    this.corticalStructures = {};
+    this.subcorticalStructures = {};
+    this.brainStructures = {}; // Combined reference for backward compatibility
     this.dataLoader = null;
     this.currentColorMetric = null;
     this.mouseDownPosition = new THREE.Vector2();
     this.isDragging = false;
     this.selectedRegionName = null;
+    this.showCortical = true;
+    this.showSubcortical = false;
 
     this.loadParcellations = true; // Set to true to load parcellated regions, else load whole hemispheres
     
@@ -44,6 +48,9 @@ class BrainViewer {
     this.dataLoader = new DataLoader();
     this.guiController = new GUIController(this.brainStructures, this.dataLoader);
     console.log('GUIController initialized');
+    
+    // Setup structure toggles
+    this.setupStructureToggles();
 
     // Load brain data
     this.loadBrainData();
@@ -241,38 +248,45 @@ class BrainViewer {
     });
   }
 
-  centerAllStructures() {
-    // First, rotate the brain to standard orientation
-    // This fixes freesurfer's default orientation
-    Object.values(this.brainStructures).forEach(structure => {
-      structure.rotation.x = -Math.PI / 2;
-    });
-    // Calculate bounding box of all loaded structures
-    const box = new THREE.Box3();
-    Object.values(this.brainStructures).forEach(structure => {
-      box.expandByObject(structure);
+  setupStructureToggles() {
+    const corticalBtn = document.getElementById('toggle-cortical');
+    const subcorticalBtn = document.getElementById('toggle-subcortical');
+
+    corticalBtn.addEventListener('click', () => {
+      if (!this.showCortical) {
+        // Switch to cortical
+        this.showCortical = true;
+        this.showSubcortical = false;
+        
+        Object.values(this.corticalStructures).forEach(structure => {
+          structure.visible = true;
+        });
+        Object.values(this.subcorticalStructures).forEach(structure => {
+          structure.visible = false;
+        });
+        
+        corticalBtn.classList.add('active');
+        subcorticalBtn.classList.remove('active');
+      }
     });
 
-    // Get the center of all structures combined
-    const center = box.getCenter(new THREE.Vector3());
-
-    // Offset all structures to center the brain at origin and rotate
-    Object.values(this.brainStructures).forEach(structure => {
-      structure.position.x -= center.x;
-      structure.position.y -= Math.min(center.y, 50 + box.min.y); // Shift down by 50 at most to touch the grid
-      structure.position.z -= center.z;
+    subcorticalBtn.addEventListener('click', () => {
+      if (!this.showSubcortical) {
+        // Switch to subcortical
+        this.showCortical = false;
+        this.showSubcortical = true;
+        
+        Object.values(this.corticalStructures).forEach(structure => {
+          structure.visible = false;
+        });
+        Object.values(this.subcorticalStructures).forEach(structure => {
+          structure.visible = true;
+        });
+        
+        corticalBtn.classList.remove('active');
+        subcorticalBtn.classList.add('active');
+      }
     });
-
-    // DEBUG: new position bounding box
-    const newBox = new THREE.Box3();
-    Object.values(this.brainStructures).forEach(structure => {
-      newBox.expandByObject(structure);
-    });
-    // this.scene.add(new THREE.Box3Helper(newBox, 0x00ff00));
-    const newCenter = newBox.getCenter(new THREE.Vector3());
-
-    console.log(`New center after centering: (${newCenter.x.toFixed(2)}, ${newCenter.y.toFixed(2)}, ${newCenter.z.toFixed(2)})`);
-    console.log(`Centered brain at origin (offset: ${center.x.toFixed(2)}, ${Math.min(center.y, 50 + box.min.y)}, ${center.z.toFixed(2)})`);
   }
 
   async loadBrainData() {
@@ -284,31 +298,27 @@ class BrainViewer {
       if (this.loadParcellations) {
         // Load parcellated regions (Desikan-Killiany atlas)
         console.log('Loading parcellated regions...');
-        await this.brainLoader.loadAtlas('desikan-killiany', this.brainStructures);
+        await this.brainLoader.loadCorticalParcellations(this.corticalStructures);
       } else {
         // Load whole cortical surfaces
-        await this.brainLoader.loadCorticalSurfaces([
-          { name: 'Left Hemisphere', path: 'assets/models/lh_pial.obj', color: 0xffa07a },
-          { name: 'Right Hemisphere', path: 'assets/models/rh_pial.obj', color: 0x87ceeb }
-        ], this.brainStructures);
+        await this.brainLoader.loadCorticalSurfaces(this.corticalStructures);
       }
 
       // Try to load subcortical structures (optional - won't fail if missing)
-      // try {
-      //   await this.brainLoader.loadSubcorticalStructures([
-      //     { name: 'Left Thalamus', path: 'assets/models/Left-Thalamus.obj', color: 0xff6b6b },
-      //     { name: 'Right Thalamus', path: 'assets/models/Right-Thalamus.obj', color: 0xff6b6b },
-      //     { name: 'Left Hippocampus', path: 'assets/models/Left-Hippocampus.obj', color: 0x4ecdc4 },
-      //     { name: 'Right Hippocampus', path: 'assets/models/Right-Hippocampus.obj', color: 0x4ecdc4 },
-      //     { name: 'Brainstem', path: 'assets/models/Brain-Stem.obj', color: 0x95e1d3 }
-      //   ], this.brainStructures);
-      //   console.log('Subcortical structures loaded');
-      // } catch (subcorticalError) {
-      //   console.warn('Subcortical structures not available:', subcorticalError.message);
-      // }
+      try {
+        await this.brainLoader.loadSubcorticalSegmentation(this.subcorticalStructures);
+        console.log('Subcortical structures loaded');
+      } catch (subcorticalError) {
+        console.warn('Subcortical structures not available:', subcorticalError.message);
+      }
 
-      // Center all brain structures as a group
-      this.centerAllStructures();
+      // Combine structures for backward compatibility
+      this.brainStructures = { ...this.corticalStructures, ...this.subcorticalStructures };
+
+      // Set initial visibility based on toggle state
+      Object.values(this.subcorticalStructures).forEach(structure => {
+        structure.visible = this.showSubcortical;
+      });
 
       // Load feature importance data
       try {

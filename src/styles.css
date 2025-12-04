@@ -56,6 +56,48 @@ body {
   min-height: 40px;
 }
 
+#structure-toggles {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 25px;
+  padding: 4px;
+  backdrop-filter: blur(10px);
+  border: 2px solid #555;
+  z-index: 100;
+}
+
+.toggle-btn {
+  background: transparent;
+  color: #aaaaaa;
+  border: none;
+  padding: 10px 28px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.toggle-btn:hover {
+  color: #ffffff;
+}
+
+.toggle-btn.active {
+  background: #4a9eff;
+  color: #ffffff;
+}
+
+.toggle-btn:active {
+  transform: scale(0.98);
+}
+
 #loading-screen {
   position: absolute;
   top: 0;

@@ -37,10 +37,10 @@ export class GUIController {
     this.createColorMappingControls();
     
     // Cortical Surface Controls
-    this.createCorticalControls();
+    // this.createCorticalControls();
     
     // Subcortical Structure Controls
-    this.createSubcorticalControls();
+    // this.createSubcorticalControls();
   }
 
 

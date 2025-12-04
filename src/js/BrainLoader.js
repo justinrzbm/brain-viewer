@@ -37,17 +37,53 @@ export class BrainLoader {
   }
 
   /**
-   * Load cortical surface meshes (hemispheres with parcellations)
-   * @param {Array} surfaceConfigs - Array of {name, path, color} objects
+   * Center and rotate a group of structures
+   * @param {Object} structures - Dictionary of structures to center
+   */
+  centerStructureGroup(structures) {
+    if (Object.keys(structures).length === 0) return;
+
+    // First, rotate the structures to standard orientation
+    Object.values(structures).forEach(structure => {
+      structure.rotation.x = -Math.PI / 2;
+    });
+
+    // Calculate bounding box of this structure group
+    const box = new THREE.Box3();
+    Object.values(structures).forEach(structure => {
+      box.expandByObject(structure);
+    });
+
+    // Get the center of this structure group
+    const center = box.getCenter(new THREE.Vector3());
+
+    // Offset all structures to center at origin
+    Object.values(structures).forEach(structure => {
+      structure.position.x -= center.x;
+      structure.position.y -= center.y;
+      structure.position.z -= center.z;
+    });
+
+    console.log(`Centered structure group at origin (offset: ${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`);
+  }
+
+  /**
+   * Load whole cortical hemisphere surfaces (without parcellation)
    * @param {Object} brainStructures - Reference to store loaded structures
    */
-  async loadCorticalSurfaces(surfaceConfigs, brainStructures) {
+  async loadCorticalSurfaces(brainStructures) {
+    const surfaceConfigs = [
+      { name: 'Left Hemisphere', path: 'assets/models/lh_pial.obj', color: 0xffa07a },
+      { name: 'Right Hemisphere', path: 'assets/models/rh_pial.obj', color: 0x87ceeb }
+    ];
+
     const loadPromises = surfaceConfigs.map(config => 
       this.loadMesh(config.path, config.name, config.color, brainStructures)
     );
 
     try {
       await Promise.all(loadPromises);
+      this.centerStructureGroup(brainStructures);
       console.log('Cortical surfaces loaded');
     } catch (error) {
       console.error('Error loading cortical surfaces:', error);
@@ -56,21 +92,70 @@ export class BrainLoader {
   }
 
   /**
-   * Load subcortical structure meshes (thalamus, hippocampus, etc.)
-   * @param {Array} structureConfigs - Array of {name, path, color} objects
+   * Load all FreeSurfer subcortical segmentations
    * @param {Object} brainStructures - Reference to store loaded structures
    */
-  async loadSubcorticalStructures(structureConfigs, brainStructures) {
-    const loadPromises = structureConfigs.map(config => 
-      this.loadMesh(config.path, config.name, config.color, brainStructures)
+  async loadSubcorticalSegmentation(brainStructures) {
+    console.log('Loading subcortical segmentations...');
+    
+    const subcorticalStructures = [
+      { name: 'Left-Lateral-Ventricle', color: 0x781286 },
+      { name: 'Left-Inf-Lat-Vent', color: 0x7c0b4a },
+      { name: 'Left-Cerebellum-White-Matter', color: 0xdcdcdc },
+      { name: 'Left-Cerebellum-Cortex', color: 0xe69422 },
+      { name: 'Left-Thalamus', color: 0x00760e },
+      { name: 'Left-Caudate', color: 0x7ab8f2 },
+      { name: 'Left-Putamen', color: 0xec0db0 },
+      { name: 'Left-Pallidum', color: 0x0c30ff },
+      { name: '3rd-Ventricle', color: 0xf4faff },
+      { name: '4th-Ventricle', color: 0x2e43ff },
+      { name: 'Brain-Stem', color: 0x98d6e1 },
+      { name: 'Left-Hippocampus', color: 0xf0e66f },
+      { name: 'Left-Amygdala', color: 0x67e567 },
+      { name: 'CSF', color: 0x3c14dc },
+      { name: 'Left-Accumbens-area', color: 0xffafaf },
+      { name: 'Left-VentralDC', color: 0xa58c7b },
+      { name: 'Left-vessel', color: 0xff0000 },
+      { name: 'Left-choroid-plexus', color: 0x78c8f0 },
+      { name: 'Right-Lateral-Ventricle', color: 0x781286 },
+      { name: 'Right-Inf-Lat-Vent', color: 0x7c0b4a },
+      { name: 'Right-Cerebellum-White-Matter', color: 0xdcdcdc },
+      { name: 'Right-Cerebellum-Cortex', color: 0xe69422 },
+      { name: 'Right-Thalamus', color: 0x00760e },
+      { name: 'Right-Caudate', color: 0x7ab8f2 },
+      { name: 'Right-Putamen', color: 0xec0db0 },
+      { name: 'Right-Pallidum', color: 0x0c30ff },
+      { name: 'Right-Hippocampus', color: 0xf0e66f },
+      { name: 'Right-Amygdala', color: 0x67e567 },
+      { name: 'Right-Accumbens-area', color: 0xffafaf },
+      { name: 'Right-VentralDC', color: 0xa58c7b },
+      { name: 'Right-vessel', color: 0xff0000 },
+      { name: 'Right-choroid-plexus', color: 0x78c8f0 },
+      { name: 'Optic-Chiasm', color: 0x7d64a0 },
+      { name: 'CC_Posterior', color: 0xff0000 },
+      { name: 'CC_Mid_Posterior', color: 0xff6900 },
+      { name: 'CC_Central', color: 0xffdc00 },
+      { name: 'CC_Mid_Anterior', color: 0x00ff00 },
+      { name: 'CC_Anterior', color: 0x0000ff }
+      // { name: 'WM-hypointensities', color: 0xc8c896 },
+    ];
+    // TODO: Right and Left VentralDC missing (or erroneously in render?)
+
+    const loadPromises = subcorticalStructures.map(structure => 
+      this.loadMesh(
+        `assets/models/subcortical/${structure.name}.obj`,
+        structure.name,
+        structure.color,
+        brainStructures
+      )
     );
 
     try {
       await Promise.all(loadPromises);
-      console.log('Subcortical structures loaded');
+      this.centerStructureGroup(brainStructures);
+      console.log('Subcortical segmentations loaded');
     } catch (error) {
-      console.error('Error loading subcortical structures:', error);
-      throw error;
+      console.warn('Some subcortical structures could not be loaded:', error);
     }
   }
 
@@ -163,52 +248,11 @@ export class BrainLoader {
   }
 
   /**
-   * Center a mesh at the origin
-   * @param {THREE.Object3D} mesh
-   */
-  centerMesh(mesh) {
-    const box = new THREE.Box3().setFromObject(mesh);
-    const center = box.getCenter(new THREE.Vector3());
-    
-    mesh.position.x -= center.x;
-    mesh.position.y -= center.y;
-    mesh.position.z -= center.z;
-  }
-
-  /**
    * Load individual parcellated regions from FreeSurfer annotation
-   * This requires pre-processing to split the annotation into separate OBJ files
-   * @param {Array} parcellationConfigs - Array of region configurations
    * @param {Object} brainStructures - Reference to store loaded structures
    */
-  async loadParcellatedRegions(parcellationConfigs, brainStructures) {
-    console.log('Loading parcellated regions...');
-    
-    const loadPromises = parcellationConfigs.map(config => 
-      this.loadMesh(
-        `assets/models/parcellations/${config.hemisphere}/${config.region}.obj`,
-        `${config.hemisphere}_${config.region}`,
-        config.color,
-        brainStructures
-      )
-    );
-
-    try {
-      await Promise.all(loadPromises);
-      console.log('Parcellated regions loaded');
-    } catch (error) {
-      console.error('Error loading parcellated regions:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Load a brain atlas (e.g., Desikan-Killiany parcellation)
-   * @param {string} atlasName - Name of the atlas
-   * @param {Object} brainStructures - Reference to store loaded structures
-   */
-  async loadAtlas(atlasName, brainStructures) {
-    console.log(`Loading ${atlasName} atlas...`);
+  async loadCorticalParcellations(brainStructures) {
+    console.log(`Loading desikan-killiany atlas...`);
     
     // Atlas configurations with FreeSurfer Desikan-Killiany colors
     const desikanKillianyRegions = [
@@ -254,10 +298,24 @@ export class BrainLoader {
       ...desikanKillianyRegions.map(r => ({ ...r, hemisphere: 'rh' }))
     ];
 
+    console.log('Loading cortical parcellated regions...');
+    
+    const loadPromises = allRegions.map(config => 
+      this.loadMesh(
+        `assets/models/parcellations/${config.hemisphere}/${config.region}.obj`,
+        `${config.hemisphere}_${config.region}`,
+        config.color,
+        brainStructures
+      )
+    );
+
     try {
-      await this.loadParcellatedRegions(allRegions, brainStructures);
+      await Promise.all(loadPromises);
+      // this.centerStructureGroup(brainStructures);
+      console.log('Cortical atlas loaded');
     } catch (error) {
-      console.warn(`Atlas ${atlasName} not found or incomplete. Using default brain surfaces.`);
+      console.warn(`Atlas ${atlasName} not found or incomplete:`, error);
+      throw error;
     }
   }
 }

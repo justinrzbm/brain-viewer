@@ -13,7 +13,7 @@ Usage:
     python freesurfer_to_obj.py <freesurfer_subject_dir> <output_dir>
 
 Example:
-    python freesurfer_to_obj.py /path/to/freesurfer/subjects/bert ./models
+    python preprocessing/freesurfer_to_obj.py data/raw/112_bl data/processed/112_bl
 """
 
 import os
@@ -190,94 +190,195 @@ class FreeSurferConverter:
             
             print(f"  Created {region_name_str}.obj ({len(region_vertices)} vertices, {len(remapped_faces)} faces)")
     
-    def convert_subcortical_segmentation(self):
+    def convert_subcortical_segmentation(self, mode='marching_cubes', smoothing=True):
         """
         Convert subcortical segmentations from aseg.mgz to individual OBJ meshes
-        Requires FreeSurfer's mri_tessellate or similar tool
+        FreeSurfer's mri_tessellate does it better, but this is an alternative in Python.
+        Note: smoothing is meant to reduce blockiness from marching cubes.
         """
-        raise NotImplementedError
+
         print("\nConverting subcortical segmentations...")
         
         aseg_file = self.mri_dir / 'aseg.mgz'
         if not aseg_file.exists():
             print(f"Warning: {aseg_file} not found, skipping subcortical structures...")
             return
-        
-        # FreeSurfer subcortical structure labels
+        brainmask_file = self.mri_dir / 'brainmask.mgz'
+        if not brainmask_file.exists():
+            raise FileNotFoundError(f"{brainmask_file} not found, required for masking WM-hypointensities")
+
+        # FreeSurfer subcortical structure labels output by asegstats2table
         subcortical_structures = {
+            4: 'Left-Lateral-Ventricle',
+            5: 'Left-Inf-Lat-Vent',
+            7: 'Left-Cerebellum-White-Matter',
+            8: 'Left-Cerebellum-Cortex',
             10: 'Left-Thalamus',
             11: 'Left-Caudate',
             12: 'Left-Putamen',
             13: 'Left-Pallidum',
             17: 'Left-Hippocampus',
             18: 'Left-Amygdala',
-            26: 'Left-Accumbens',
+            26: 'Left-Accumbens-area',
             49: 'Right-Thalamus',
+            43: 'Right-Lateral-Ventricle',
+            44: 'Right-Inf-Lat-Vent',
+            46: 'Right-Cerebellum-White-Matter',
+            47: 'Right-Cerebellum-Cortex',
+            48: 'Right-Thalamus',
             50: 'Right-Caudate',
             51: 'Right-Putamen',
             52: 'Right-Pallidum',
             53: 'Right-Hippocampus',
             54: 'Right-Amygdala',
-            58: 'Right-Accumbens',
-            16: 'Brain-Stem'
+            58: 'Right-Accumbens-area',
+            16: 'Brain-Stem',
+            28: 'CSF',
+            30: '3rd-Ventricle',
+            31: '4th-Ventricle',
+            43: 'WM-hypointensities',
+            44: 'Left-VentralDC',
+            45: 'Right-VentralDC',
+            60: 'Optic-Chiasm',
+            251: 'CC_Posterior',
+            252: 'CC_Mid_Posterior',
+            253: 'CC_Central',
+            254: 'CC_Mid_Anterior',
+            255: 'CC_Anterior',
         }
-        
+
         # Load segmentation volume
         aseg_img = nib.load(aseg_file)
         aseg_data = aseg_img.get_fdata()
-        
+        brainmask_img = nib.load(brainmask_file)
+        brainmask_data = brainmask_img.get_fdata()
+
         print("Note: For optimal results, use FreeSurfer's mri_tessellate:")
         for label_id, structure_name in subcortical_structures.items():
             output_file = self.output_dir / f'{structure_name}.obj'
             print(f"  mri_tessellate {aseg_file} {label_id} {output_file}")
         
-        # # Alternative: Use marching cubes (requires scikit-image)
-        # try:
-        #     from skimage import measure
-            
-        #     subcort_dir = self.output_dir / 'subcortical'
-        #     subcort_dir.mkdir(parents=True, exist_ok=True)
-            
-        #     for label_id, structure_name in subcortical_structures.items():
-        #         print(f"Processing {structure_name}...")
-                
-        #         # Create binary mask for this structure
-        #         mask = (aseg_data == label_id)
-                
-        #         if not mask.any():
-        #             print(f"  Warning: No voxels found for {structure_name}")
-        #             continue
-                
-        #         # Apply marching cubes
-        #         verts, faces, normals, values = measure.marching_cubes(mask, level=0.5)
-                
-        #         # Apply affine transformation to get RAS coordinates
-        #         affine = aseg_img.affine
-        #         verts_ras = nib.affines.apply_affine(affine, verts)
-                
-        #         # Write OBJ file
-        #         output_file = subcort_dir / f'{structure_name}.obj'
-        #         with open(output_file, 'w') as f:
-        #             f.write(f"# {structure_name}\n\n")
-                    
-        #             for v in verts_ras:
-        #                 f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
-                    
-        #             for face in faces:
-        #                 f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
-                
-        #         print(f"  Created {structure_name}.obj ({len(verts_ras)} vertices, {len(faces)} faces)")
-                
-        # except ImportError:
-        #     print("Note: Install scikit-image for automatic subcortical mesh generation:")
-        #     print("  pip install scikit-image")
+        # Alternative: Use marching cubes for subcortical mesh generation
+        print(f"\nGenerating subcortical meshes using {mode}...")
+        from skimage import measure
+        import trimesh
+        from scipy.ndimage import binary_closing, binary_opening
+
+        subcort_dir = self.output_dir / 'subcortical'
+        subcort_dir.mkdir(parents=True, exist_ok=True)
+
+        for label_id, structure_name in subcortical_structures.items():
+            print(f"Processing {structure_name}...")
+
+            # Create binary mask for this structure
+            mask = (aseg_data == label_id)
+
+            if not mask.any():
+                print(f"  Warning: No voxels found for {structure_name}")
+                continue
+
+            # Special case: WM-hypointensities contains noisy outliers outside brain
+            if structure_name == 'WM-hypointensities':
+                # erase outliers by masking with brainmask
+                mask = np.logical_and(mask, brainmask_data > 0)
+                mask = np.where(brainmask_data, 1, 0).astype(np.uint8)
+
+
+            # Generate mesh based on mode
+            if mode == 'marching_cubes':
+                mesh = self._marching_cubes_mesh(mask, smoothing)
+            elif mode == 'dual_contouring':
+                mesh = self._dual_contouring_mesh(mask, smoothing)
+            else:
+                print(f"  Error: Unknown mode '{mode}'")
+                continue
+
+            # Write OBJ file
+            output_file = subcort_dir / f'{structure_name}.obj'
+            try:
+                mesh.export(output_file, file_type='obj')
+                verts = len(mesh.vertices)
+                faces = len(mesh.faces)
+                print(f"  Created {structure_name}.obj ({verts} vertices, {faces} faces)")
+            except Exception as e:
+                print(f"  Error saving OBJ file for {structure_name}: {e}")
+
+    def _marching_cubes_mesh(self, mask, smoothing=False):
+        """Generate mesh using marching cubes algorithm"""
+        import trimesh
+        from skimage import measure
+
+        # Extract mesh using marching cubes
+        verts, faces, _, _ = measure.marching_cubes(mask, level=0.5)
+
+        # Create a trimesh object
+        mesh = trimesh.Trimesh(vertices=verts, faces=faces)
+        # Invert normals (marching cubes produces inward-facing normals)
+        mesh.invert()
+
+        if smoothing:
+            # Apply Taubin smoothing (avoids shrinkage)
+            trimesh.smoothing.filter_taubin(mesh, iterations=30)
+            # Decimate mesh to reduce complexity
+            try:
+                mesh = mesh.simplify_quadric_decimation(face_count=int(len(mesh.faces) * 0.5))
+            except Exception as e:
+                print(f"  Error: Mesh decimation failed: {e}\n Note: could be missing fast-simplification package, can pip install fast-simplification")
+
+        return mesh
+
+    def _dual_contouring_mesh(self, mask, smoothing=False):
+        """Generate mesh using dual contouring algorithm with gradient-based vertex positioning"""
+        import trimesh
+        from skimage import measure
+        from scipy.ndimage import sobel
+
+
+        # Convert to float for gradient computation
+        mask_float = mask.astype(float)
+
+        # Compute gradient field
+        grad_x = sobel(mask_float, axis=0)
+        grad_y = sobel(mask_float, axis=1)
+        grad_z = sobel(mask_float, axis=2)
+
+        # Extract initial mesh using marching cubes
+        verts, faces, _, _ = measure.marching_cubes(mask, level=0.5, gradient_direction='descent')
+
+        # Improve vertex positions using gradient information
+        for i in range(len(verts)):
+            # Get voxel coordinates
+            vox_coord = verts[i].astype(int)
+            vox_coord = np.clip(vox_coord, [0, 0, 0], np.array(mask.shape) - 1)
+
+            # Get gradient at this location
+            gx = grad_x[tuple(vox_coord)]
+            gy = grad_y[tuple(vox_coord)]
+            gz = grad_z[tuple(vox_coord)]
+            grad_mag = np.sqrt(gx**2 + gy**2 + gz**2)
+
+            # Adjust vertex position along gradient
+            if grad_mag > 0.1:
+                grad_norm = np.array([gx, gy, gz]) / grad_mag
+                verts[i] += grad_norm * 0.5
+
+        # Create trimesh object
+        mesh = trimesh.Trimesh(vertices=verts, faces=faces)
+        mesh.invert()
+
+        if smoothing:
+            # Apply Laplacian smoothing
+            trimesh.smoothing.filter_laplacian(mesh, iterations=3)
+
+        return mesh
+
     
     def convert_all(self):
         """Convert all available FreeSurfer data to OBJ format"""
         print(f"Converting FreeSurfer data from: {self.subject_dir}")
         print(f"Output directory: {self.output_dir}\n")
         
-        # Convert cortical surfaces
+        # # Convert cortical surfaces
         self.convert_cortical_surfaces()
         
         # Convert parcellated regions for both hemispheres
@@ -285,7 +386,7 @@ class FreeSurferConverter:
             self.convert_parcellated_regions(hemisphere, 'aparc')
         
         # Convert subcortical structures
-        self.convert_subcortical_segmentation()
+        self.convert_subcortical_segmentation(mode='marching_cubes')
         
         print("\nConversion complete!")
         print(f"OBJ files saved to: {self.output_dir}")
@@ -296,11 +397,11 @@ def main():
         description='Convert FreeSurfer brain data to OBJ format for Three.js visualization'
     )
     parser.add_argument(
-        '--subject_dir',
+        'subject_dir',
         help='Path to FreeSurfer subject directory (e.g., $SUBJECTS_DIR/bert)'
     )
     parser.add_argument(
-        '--output_dir',
+        'output_dir',
         help='Output directory for OBJ files'
     )
     parser.add_argument(

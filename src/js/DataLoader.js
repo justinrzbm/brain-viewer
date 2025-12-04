@@ -66,22 +66,25 @@ export class DataLoader {
   getFeatureImportance(regionName, metric) {
     // Try exact match first
     if (this.featureData.has(regionName)) {
-      return this.featureData.get(regionName)[metric] || 0;
+      const value = this.featureData.get(regionName)[metric];
+      return value !== undefined ? value : null;
     }
     
     // Try with _thickness suffix
     const thicknessKey = `${regionName}_thickness`;
     if (this.featureData.has(thicknessKey)) {
-      return this.featureData.get(thicknessKey)[metric] || 0;
+      const value = this.featureData.get(thicknessKey)[metric];
+      return value !== undefined ? value : null;
     }
     
     // Try with _thicknessstd suffix
     const thicknessstdKey = `${regionName}_thicknessstd`;
     if (this.featureData.has(thicknessstdKey)) {
-      return this.featureData.get(thicknessstdKey)[metric] || 0;
+      const value = this.featureData.get(thicknessstdKey)[metric];
+      return value !== undefined ? value : null;
     }
     
-    return 0;
+    return null;
   }
 
   /**
@@ -105,6 +108,7 @@ export class DataLoader {
    * @param {string} metric - Metric name
    */
   normalizeValue(value, metric) {
+    if (value === null || value === undefined || isNaN(value)) return 0; // Return 0 (white) for missing data
     const range = this.getMetricRange(metric);
     if (range.max === range.min) return 0.5;
     return (value - range.min) / (range.max - range.min);
