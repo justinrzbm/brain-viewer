@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BrainLoader } from './js/BrainLoader.js';
 import { GUIController } from './js/GUIController.js';
+import { DataLoader } from './js/DataLoader.js';
 
 /**
  * Brain Viewer - Main Application
@@ -18,6 +19,11 @@ class BrainViewer {
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
     this.brainStructures = {};
+    this.dataLoader = null;
+    this.currentColorMetric = null;
+    this.mouseDownPosition = new THREE.Vector2();
+    this.isDragging = false;
+    this.selectedRegionName = null;
 
     this.loadParcellations = true; // Set to true to load parcellated regions, else load whole hemispheres
     
@@ -35,11 +41,18 @@ class BrainViewer {
     // Initialize loaders and GUI
     this.brainLoader = new BrainLoader(this.scene);
     console.log('BrainLoader initialized');
-    this.guiController = new GUIController(this.brainStructures);
+    this.dataLoader = new DataLoader();
+    this.guiController = new GUIController(this.brainStructures, this.dataLoader);
     console.log('GUIController initialized');
 
     // Load brain data
     this.loadBrainData();
+
+    //debug: show a dot at the origin
+    const originDotGeometry = new THREE.SphereGeometry(1, 16, 16);
+    const originDotMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const originDot = new THREE.Mesh(originDotGeometry, originDotMaterial);
+    this.scene.add(originDot);
     
     // Start animation loop
     this.animate();
@@ -50,7 +63,7 @@ class BrainViewer {
     this.scene.background = new THREE.Color(0x1a1a1a);
     
     // Add a grid for reference (optional)
-    const gridHelper = new THREE.GridHelper(200, 20, 0x444444, 0x222222);
+    const gridHelper = new THREE.GridHelper(175, 20, 0x444444, 0x222222);
     gridHelper.position.y = -50;
     this.scene.add(gridHelper);
   }
@@ -113,8 +126,9 @@ class BrainViewer {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
     this.controls.screenSpacePanning = false;
-    this.controls.minDistance = 50;
-    this.controls.maxDistance = 500;
+    this.controls.enablePan = false;
+    this.controls.minDistance = 20;
+    this.controls.maxDistance = 300;
     this.controls.maxPolarAngle = Math.PI;
   }
 
@@ -122,11 +136,35 @@ class BrainViewer {
     // Window resize
     window.addEventListener('resize', () => this.onWindowResize(), false);
     
-    // Mouse click for region selection
-    this.renderer.domElement.addEventListener('click', (event) => this.onMouseClick(event), false);
+    // Track mouse down position to detect dragging
+    this.renderer.domElement.addEventListener('mousedown', (event) => {
+      this.mouseDownPosition.set(event.clientX, event.clientY);
+      this.isDragging = false;
+    }, false);
     
-    // Mouse move for hover effects
-    this.renderer.domElement.addEventListener('mousemove', (event) => this.onMouseMove(event), false);
+    // Detect if mouse moved during drag
+    this.renderer.domElement.addEventListener('mousemove', (event) => {
+      if (this.mouseDownPosition.x !== 0 || this.mouseDownPosition.y !== 0) {
+        const dx = event.clientX - this.mouseDownPosition.x;
+        const dy = event.clientY - this.mouseDownPosition.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // If moved more than 5 pixels, consider it a drag
+        if (distance > 5) {
+          this.isDragging = true;
+        }
+      }
+      this.onMouseMove(event);
+    }, false);
+    
+    // Mouse click for region selection (only if not dragging)
+    this.renderer.domElement.addEventListener('mouseup', (event) => {
+      if (!this.isDragging) {
+        this.onMouseClick(event);
+      }
+      this.mouseDownPosition.set(0, 0);
+      this.isDragging = false;
+    }, false);
   }
 
   onWindowResize() {
@@ -153,12 +191,26 @@ class BrainViewer {
       const selectedObject = intersects[0].object;
       const structureName = selectedObject.userData.name || 'Unknown Region';
       
-      // Update info panel
-      document.getElementById('selected-region').textContent = 
-        `Selected: ${structureName}`;
+      // Store selected region name
+      this.selectedRegionName = structureName;
+      
+      // Get feature importance value if color mapping is active
+      let featureValue = null;
+      if (this.currentColorMetric && this.currentColorMetric !== 'none') {
+        featureValue = this.dataLoader.getFeatureImportance(structureName, this.currentColorMetric);
+      }
+      
+      // Update info panel with region name and feature value
+      this.guiController.updateSelectedRegionInfo(structureName, featureValue);
       
       // Highlight the selected structure (optional visual feedback)
       this.highlightStructure(selectedObject);
+    }
+    else {
+      // Clicked on empty space - clear selection
+      this.selectedRegionName = null;
+      this.guiController.updateSelectedRegionInfo(null, null);
+      this.highlightStructure(null);
     }
   }
 
@@ -171,18 +223,30 @@ class BrainViewer {
   highlightStructure(mesh) {
     // Reset all structures to default emissive
     Object.values(this.brainStructures).forEach(structure => {
-      if (structure.material) {
-        structure.material.emissive.setHex(0x000000);
+      structure.traverse((child) => {
+        if (child.isMesh && child.material) {
+          child.material.emissive.setHex(0x000000);
+          child.material.emissiveIntensity = 0;
+        }
+      });
+    });
+    if (!mesh) return;
+
+    // Make selected structure glow
+    mesh.traverse((child) => {
+      if (child.isMesh && child.material) {
+        child.material.emissive.setHex(0xffffff);
+        child.material.emissiveIntensity = 0.3;           
       }
     });
-
-    // Highlight selected structure
-    if (mesh.material) {
-      mesh.material.emissive.setHex(0x333333);
-    }
   }
 
   centerAllStructures() {
+    // First, rotate the brain to standard orientation
+    // This fixes freesurfer's default orientation
+    Object.values(this.brainStructures).forEach(structure => {
+      structure.rotation.x = -Math.PI / 2;
+    });
     // Calculate bounding box of all loaded structures
     const box = new THREE.Box3();
     Object.values(this.brainStructures).forEach(structure => {
@@ -191,13 +255,26 @@ class BrainViewer {
 
     // Get the center of all structures combined
     const center = box.getCenter(new THREE.Vector3());
-    
-    // Offset all structures to center the brain at origin
+    const boxsize = box.getSize(new THREE.Vector3());
+    //debug: display bounding box
+    const boxHelper = new THREE.Box3Helper(box, 0xffff00);
+    this.scene.add(boxHelper);
+    console.log(center.y, boxsize.y/2 - 50);
+    this.scene.add(new THREE.Sphere(new THREE.Vector3(0,-50,0), 2, 0xff0000));
+    // Offset all structures to center the brain at origin and rotate
     Object.values(this.brainStructures).forEach(structure => {
       structure.position.x -= center.x;
-      structure.position.y -= center.y;
+      structure.position.y -= Math.min(center.y, boxsize.y/2 - 50); // Shift down by 50 at most to touch the grid
       structure.position.z -= center.z;
     });
+    const newBox = new THREE.Box3();
+    Object.values(this.brainStructures).forEach(structure => {
+      newBox.expandByObject(structure);
+    });
+    this.scene.add(new THREE.Box3Helper(newBox, 0x00ff00));
+    const newCenter = newBox.getCenter(new THREE.Vector3());
+    console.log(`New center after centering: (${newCenter.x.toFixed(2)}, ${newCenter.y.toFixed(2)}, ${newCenter.z.toFixed(2)})`);
+    console.log(`Box minimum edge: (${newBox.min.x.toFixed(2)}, ${newBox.min.y.toFixed(2)}, ${newBox.min.z.toFixed(2)})`);
 
     console.log(`Centered brain at origin (offset: ${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`);
   }
@@ -237,8 +314,21 @@ class BrainViewer {
       // Center all brain structures as a group
       this.centerAllStructures();
 
+      // Load feature importance data
+      try {
+        await this.dataLoader.loadFeatureImportance('/assets/region_data/classification_feature_importance_results.csv');
+        console.log('Feature importance data loaded');
+      } catch (error) {
+        console.warn('Could not load feature importance data:', error);
+      }
+
       // Initialize GUI controls with loaded structures
-      this.guiController.initializeControls(this.brainStructures, this.scene, this.camera);
+      this.guiController.initializeControls(
+        this.brainStructures, 
+        this.scene, 
+        this.camera,
+        (metric) => this.applyColorMapping(metric)
+      );
 
       // Hide loading screen
       loadingScreen.classList.add('hidden');
@@ -253,6 +343,50 @@ class BrainViewer {
           <p style="font-size: 12px; margin-top: 20px;">${error.message}</p>
         </div>
       `;
+    }
+  }
+
+  applyColorMapping(metric) {
+    if (!metric || metric === 'none') {
+      // Reset to original colors
+      Object.entries(this.brainStructures).forEach(([name, structure]) => {
+        const originalColor = structure.userData.originalColor || 0x888888;
+        structure.traverse((child) => {
+          if (child.isMesh && child.material) {
+            child.material.color.setHex(originalColor);
+          }
+        });
+      });
+      this.currentColorMetric = null;
+      
+      // Update info panel to show no feature value
+      if (this.selectedRegionName) {
+        this.guiController.updateSelectedRegionInfo(this.selectedRegionName, null);
+      }
+      return;
+    }
+
+    this.currentColorMetric = metric;
+    
+    // Apply color mapping based on feature importance
+    Object.entries(this.brainStructures).forEach(([name, structure]) => {
+      const importance = this.dataLoader.getFeatureImportance(name, metric);
+      const normalized = this.dataLoader.normalizeValue(importance, metric);
+      const color = this.dataLoader.valueToColor(normalized);
+      
+      structure.traverse((child) => {
+        if (child.isMesh && child.material) {
+          child.material.color.setHex(color);
+        }
+      });
+    });
+    
+    console.log(`Applied color mapping for: ${metric}`);
+    
+    // Update info panel if a region is selected
+    if (this.selectedRegionName) {
+      const featureValue = this.dataLoader.getFeatureImportance(this.selectedRegionName, metric);
+      this.guiController.updateSelectedRegionInfo(this.selectedRegionName, featureValue);
     }
   }
 

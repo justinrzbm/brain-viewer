@@ -6,65 +6,44 @@ import * as dat from 'dat.gui';
  */
 
 export class GUIController {
-  constructor(brainStructures) {
+  constructor(brainStructures, dataLoader) {
     this.gui = new dat.GUI();
     this.brainStructures = brainStructures;
+    this.dataLoader = dataLoader;
     this.settings = {
       globalOpacity: 1.0,
       wireframe: false,
-      showGrid: true,
+      showGrid: false,
       backgroundColor: '#1a1a1a',
       resetCamera: () => this.resetCamera(),
-      screenshotView: () => this.takeScreenshot()
+      screenshotView: () => this.takeScreenshot(),
+      colorMetric: 'none'
     };
     
     this.structureSettings = {};
+    this.colorMappingCallback = null;
   }
 
-  initializeControls(structures, scene, camera) {
+  initializeControls(structures, scene, camera, colorMappingCallback) {
     this.brainStructures = structures;
     this.scene = scene;
     this.camera = camera;
+    this.colorMappingCallback = colorMappingCallback;
     
-    // Global Controls Folder
-    this.createGlobalControls();
+    // View Controls (includes opacity, wireframe, presets)
+    this.createViewControls();
+    
+    // Color Mapping Controls
+    this.createColorMappingControls();
     
     // Cortical Surface Controls
     this.createCorticalControls();
     
     // Subcortical Structure Controls
     this.createSubcorticalControls();
-    
-    // View Controls
-    this.createViewControls();
   }
 
-  createGlobalControls() {
-    const globalFolder = this.gui.addFolder('Global Controls');
-    
-    // Global opacity slider
-    globalFolder.add(this.settings, 'globalOpacity', 0, 1, 0.01)
-      .name('Global Opacity')
-      .onChange((value) => {
-        Object.values(this.brainStructures).forEach(structure => {
-          if (structure.material) {
-            structure.material.opacity = value;
-            structure.material.transparent = value < 1.0;
-          }
-        });
-      });
 
-    // Wireframe toggle
-    globalFolder.add(this.settings, 'wireframe')
-      .name('Wireframe Mode')
-      .onChange((value) => {
-        Object.values(this.brainStructures).forEach(structure => {
-          if (structure.material) {
-            structure.material.wireframe = value;
-          }
-        });
-      });
-  }
 
   createCorticalControls() {
     const corticalFolder = this.gui.addFolder('Cortical Surfaces');
@@ -79,8 +58,7 @@ export class GUIController {
     corticalStructures.forEach(([name, structure]) => {
       const settings = {
         visible: true,
-        opacity: 1.0,
-        color: structure.material ? structure.material.color.getHex() : 0xffffff
+        opacity: 1.0
       };
       
       this.structureSettings[name] = settings;
@@ -98,19 +76,12 @@ export class GUIController {
       structureFolder.add(settings, 'opacity', 0, 1, 0.01)
         .name('Opacity')
         .onChange((value) => {
-          if (structure.material) {
-            structure.material.opacity = value;
-            structure.material.transparent = value < 1.0;
-          }
-        });
-      
-      // Color picker
-      structureFolder.addColor(settings, 'color')
-        .name('Color')
-        .onChange((value) => {
-          if (structure.material) {
-            structure.material.color.setHex(value);
-          }
+          structure.traverse((child) => {
+            if (child.isMesh && child.material) {
+              child.material.opacity = value;
+              child.material.transparent = value < 1.0;
+            }
+          });
         });
     });
   }
@@ -150,18 +121,19 @@ export class GUIController {
           .name('Group Opacity')
           .onChange((value) => {
             matchingStructures.forEach(([_, structure]) => {
-              if (structure.material) {
-                structure.material.opacity = value;
-                structure.material.transparent = value < 1.0;
-              }
+              structure.traverse((child) => {
+                if (child.isMesh && child.material) {
+                  child.material.opacity = value;
+                  child.material.transparent = value < 1.0;
+                }
+              });
             });
           });
 
         // Individual structure controls
         matchingStructures.forEach(([name, structure]) => {
           const settings = {
-            visible: true,
-            color: structure.material ? structure.material.color.getHex() : 0xffffff
+            visible: true
           };
           
           this.structureSettings[name] = settings;
@@ -179,6 +151,33 @@ export class GUIController {
   createViewControls() {
     const viewFolder = this.gui.addFolder('View Controls');
     
+    // Global opacity slider
+    viewFolder.add(this.settings, 'globalOpacity', 0, 1, 0.01)
+      .name('Global Opacity')
+      .onChange((value) => {
+        Object.values(this.brainStructures).forEach(structure => {
+          structure.traverse((child) => {
+            if (child.isMesh && child.material) {
+              child.material.opacity = value;
+              child.material.transparent = value < 1.0;
+            }
+          });
+        });
+      });
+
+    // Wireframe toggle
+    viewFolder.add(this.settings, 'wireframe')
+      .name('Wireframe Mode')
+      .onChange((value) => {
+        Object.values(this.brainStructures).forEach(structure => {
+          structure.traverse((child) => {
+            if (child.isMesh && child.material) {
+              child.material.wireframe = value;
+            }
+          });
+        });
+      });
+    
     // Background color
     viewFolder.addColor(this.settings, 'backgroundColor')
       .name('Background Color')
@@ -188,17 +187,11 @@ export class GUIController {
         }
       });
 
-    // Grid toggle
-    viewFolder.add(this.settings, 'showGrid')
-      .name('Show Grid')
-      .onChange((value) => {
-        if (this.scene) {
-          const grid = this.scene.getObjectByName('gridHelper');
-          if (grid) {
-            grid.visible = value;
-          }
-        }
-      });
+    // View presets
+    viewFolder.add({ action: () => this.setLateralView() }, 'action').name('Lateral View');
+    viewFolder.add({ action: () => this.setMedialView() }, 'action').name('Medial View');
+    viewFolder.add({ action: () => this.setSuperiorView() }, 'action').name('Superior View');
+    viewFolder.add({ action: () => this.setAnteriorView() }, 'action').name('Anterior View');
 
     // Reset camera button
     viewFolder.add(this.settings, 'resetCamera')
@@ -213,7 +206,7 @@ export class GUIController {
 
   resetCamera() {
     if (this.camera) {
-      this.camera.position.set(0, 0, 150);
+      this.camera.position.set(0, 0, 200);
       this.camera.lookAt(0, 0, 0);
     }
   }
@@ -247,30 +240,69 @@ export class GUIController {
 
   setLateralView() {
     if (this.camera) {
-      this.camera.position.set(150, 0, 0);
+      this.camera.position.set(200, 0, 0);
       this.camera.lookAt(0, 0, 0);
     }
   }
 
   setMedialView() {
     if (this.camera) {
-      this.camera.position.set(-150, 0, 0);
+      this.camera.position.set(-200, 0, 0);
       this.camera.lookAt(0, 0, 0);
     }
   }
 
   setSuperiorView() {
     if (this.camera) {
-      this.camera.position.set(0, 150, 0);
+      this.camera.position.set(0, 200, 0);
       this.camera.lookAt(0, 0, 0);
     }
   }
 
   setAnteriorView() {
     if (this.camera) {
-      this.camera.position.set(0, 0, 150);
+      this.camera.position.set(0, 0, 200);
       this.camera.lookAt(0, 0, 0);
     }
+  }
+
+  createColorMappingControls() {
+    const colorFolder = this.gui.addFolder('Color Mapping');
+    
+    // Get available metrics from data loader
+    const metrics = ['none'];
+    if (this.dataLoader) {
+      metrics.push(...this.dataLoader.getAvailableMetrics());
+    }
+    
+    // Create dropdown for metric selection
+    colorFolder.add(this.settings, 'colorMetric', metrics)
+      .name('')
+      .onChange((value) => {
+        if (this.colorMappingCallback) {
+          this.colorMappingCallback(value);
+        }
+      });
+    
+    colorFolder.open();
+  }
+
+  updateSelectedRegionInfo(regionName, featureValue) {
+    const selectedRegionDiv = document.getElementById('selected-region');
+    if (!selectedRegionDiv) return;
+    
+    if (!regionName) {
+      selectedRegionDiv.innerHTML = 'Click on a brain region to see details';
+      return;
+    }
+    
+    let html = `<strong style="color: #ffdd57;">${regionName}</strong>`;
+    
+    if (featureValue !== null && featureValue !== undefined && this.settings.colorMetric !== 'none') {
+      html += `<br><span style="font-size: 12px; color: #4a9eff;">${this.settings.colorMetric}:</span> <span style="color: #fff;">${featureValue.toFixed(4)}</span>`;
+    }
+    
+    selectedRegionDiv.innerHTML = html;
   }
 
   destroy() {
