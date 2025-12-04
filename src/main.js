@@ -255,28 +255,24 @@ class BrainViewer {
 
     // Get the center of all structures combined
     const center = box.getCenter(new THREE.Vector3());
-    const boxsize = box.getSize(new THREE.Vector3());
-    //debug: display bounding box
-    const boxHelper = new THREE.Box3Helper(box, 0xffff00);
-    this.scene.add(boxHelper);
-    console.log(center.y, boxsize.y/2 - 50);
-    this.scene.add(new THREE.Sphere(new THREE.Vector3(0,-50,0), 2, 0xff0000));
+
     // Offset all structures to center the brain at origin and rotate
     Object.values(this.brainStructures).forEach(structure => {
       structure.position.x -= center.x;
-      structure.position.y -= Math.min(center.y, boxsize.y/2 - 50); // Shift down by 50 at most to touch the grid
+      structure.position.y -= Math.min(center.y, 50 + box.min.y); // Shift down by 50 at most to touch the grid
       structure.position.z -= center.z;
     });
+
+    // DEBUG: new position bounding box
     const newBox = new THREE.Box3();
     Object.values(this.brainStructures).forEach(structure => {
       newBox.expandByObject(structure);
     });
-    this.scene.add(new THREE.Box3Helper(newBox, 0x00ff00));
+    // this.scene.add(new THREE.Box3Helper(newBox, 0x00ff00));
     const newCenter = newBox.getCenter(new THREE.Vector3());
-    console.log(`New center after centering: (${newCenter.x.toFixed(2)}, ${newCenter.y.toFixed(2)}, ${newCenter.z.toFixed(2)})`);
-    console.log(`Box minimum edge: (${newBox.min.x.toFixed(2)}, ${newBox.min.y.toFixed(2)}, ${newBox.min.z.toFixed(2)})`);
 
-    console.log(`Centered brain at origin (offset: ${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`);
+    console.log(`New center after centering: (${newCenter.x.toFixed(2)}, ${newCenter.y.toFixed(2)}, ${newCenter.z.toFixed(2)})`);
+    console.log(`Centered brain at origin (offset: ${center.x.toFixed(2)}, ${Math.min(center.y, 50 + box.min.y)}, ${center.z.toFixed(2)})`);
   }
 
   async loadBrainData() {
