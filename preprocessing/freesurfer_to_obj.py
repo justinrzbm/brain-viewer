@@ -13,7 +13,7 @@ Usage:
     python freesurfer_to_obj.py <freesurfer_subject_dir> <output_dir>
 
 Example:
-    python preprocessing/freesurfer_to_obj.py data/raw/112_bl data/processed/112_bl
+    python preprocessing/freesurfer_to_obj.py data/raw/112_bl src/assets/models
 """
 
 import os
@@ -418,11 +418,21 @@ def main():
     args = parser.parse_args()
     
     # Validate input directory
-    subject_dir = Path(args.subject_dir)
-    if not subject_dir.exists():
-        print(f"Error: Subject directory not found: {subject_dir}")
+    if not Path(args.subject_dir).exists():
+        print(f"Error: Subject directory not found: {args.subject_dir}")
         sys.exit(1)
     
+    if "src/assets/models" in str(args.output_dir):
+        import shutil
+        print("Clearing out old models from src/assets/models...")
+        output_path = Path(args.output_dir)
+        if output_path.exists() and output_path.is_dir():
+            for item in output_path.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+
     # Create converter and run
     converter = FreeSurferConverter(args.subject_dir, args.output_dir)
     
